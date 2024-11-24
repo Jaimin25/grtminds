@@ -1,101 +1,117 @@
-import Image from "next/image";
+'use server';
 
-export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+import prisma from '@/lib/db';
+import HomePage from '@/components/Home';
+import { fetchWikipediaData } from '@/lib/scrapeWikiData';
+import { Pioneer, WikipediaInfo } from '@/lib/type';
+import { redis } from '@/lib/redis';
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+const PIONEERS_PER_PAGE = 10;
+const CACHE_EXPIRY = 300;
+const CACHE_PREFIX = 'pioneers:';
+
+interface LoadPioneersParams {
+  lastId: number | null;
+  page: number | null;
+}
+
+async function getPioneersFromDB({ lastId, page }: LoadPioneersParams) {
+  try {
+    const skip = page && page > 1 ? (page - 1) * PIONEERS_PER_PAGE : 0;
+
+    return await prisma.pioneer.findMany({
+      orderBy: { name: 'asc' },
+      take: PIONEERS_PER_PAGE,
+      ...(lastId
+        ? {
+            skip: 1,
+            cursor: { id: lastId },
+          }
+        : page && page > 1
+          ? { skip }
+          : {}),
+    });
+  } catch (error) {
+    console.error('Database error:', error);
+    throw new Error('Failed to fetch pioneers from database');
+  }
+}
+
+async function getCachedPioneers(cacheKey: string) {
+  try {
+    const cached = await redis.get(cacheKey);
+    return cached ? (JSON.parse(cached) as WikipediaInfo[]) : null;
+  } catch (error) {
+    console.error('Cache error:', error);
+    return null;
+  }
+}
+
+async function setCachedPioneers(cacheKey: string, data: WikipediaInfo[]) {
+  try {
+    await redis.set(cacheKey, JSON.stringify(data));
+    await redis.expire(cacheKey, CACHE_EXPIRY);
+  } catch (error) {
+    console.error('Cache set error:', error);
+  }
+}
+
+async function fetchAndProcessWikipediaData(pioneers: Pioneer[]) {
+  const results = await Promise.allSettled(
+    pioneers.map((pioneer) => fetchWikipediaData(pioneer)),
+  );
+
+  return results
+    .filter(
+      (result): result is PromiseFulfilledResult<WikipediaInfo> =>
+        result.status === 'fulfilled' && result.value !== null,
+    )
+    .map((result) => result.value);
+}
+
+export async function loadPioneers({ lastId, page }: LoadPioneersParams) {
+  try {
+    const pageNo = page ?? 1;
+    const cacheKey = `${CACHE_PREFIX}${pageNo}`;
+
+    const cachedData = await getCachedPioneers(cacheKey);
+    if (cachedData) {
+      return cachedData;
+    }
+
+    const pioneers = await getPioneersFromDB({ lastId, page });
+    if (pioneers.length === 0) {
+      return [];
+    }
+
+    const processedData = await fetchAndProcessWikipediaData(pioneers);
+
+    await setCachedPioneers(cacheKey, processedData);
+
+    return processedData;
+  } catch (error) {
+    console.error('Error in loadPioneers:', error);
+    throw new Error('Failed to load pioneers');
+  }
+}
+
+export default async function Page() {
+  try {
+    const validData = await loadPioneers({ page: null, lastId: null });
+
+    return (
+      <main className='container mx-auto mt-12 w-full'>
+        <HomePage pioneers={validData} />
+      </main>
+    );
+  } catch (error) {
+    console.error('Page error:', error);
+    return (
+      <main className='container mx-auto mt-12 w-full'>
+        <div className='text-center text-red-500'>
+          Failed to load pioneers. Please try again later.
         </div>
       </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
-  );
+    );
+  }
 }
