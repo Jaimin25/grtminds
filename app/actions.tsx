@@ -4,7 +4,12 @@ import { fetchWikipediaData } from '@/lib/scrapeWikiData';
 import { Pioneer, WikipediaInfo } from '@/lib/type';
 import { redis } from '@/lib/redis';
 import prisma from '@/lib/db';
-import { logger } from '@/lib/utils';
+import winston from 'winston';
+
+export const logger = winston.createLogger({
+  level: 'info',
+  transports: [new winston.transports.Console()],
+});
 
 const PIONEERS_PER_PAGE = 10;
 const CACHE_EXPIRY = 300;
