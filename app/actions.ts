@@ -20,7 +20,7 @@ interface LoadPioneersParams {
   page: number | null;
 }
 
-async function getPioneersFromDB({ lastId, page }: LoadPioneersParams) {
+export async function getPioneersFromDB({ lastId, page }: LoadPioneersParams) {
   try {
     const skip = page && page > 1 ? (page - 1) * PIONEERS_PER_PAGE : 0;
 
@@ -42,7 +42,7 @@ async function getPioneersFromDB({ lastId, page }: LoadPioneersParams) {
   }
 }
 
-async function getCachedPioneers(cacheKey: string) {
+export async function getCachedPioneers(cacheKey: string) {
   redis.connect();
   try {
     const cached = await redis.get(cacheKey);
@@ -53,7 +53,10 @@ async function getCachedPioneers(cacheKey: string) {
   }
 }
 
-async function setCachedPioneers(cacheKey: string, data: WikipediaInfo[]) {
+export async function setCachedPioneers(
+  cacheKey: string,
+  data: WikipediaInfo[],
+) {
   try {
     const d = await redis.set(cacheKey, JSON.stringify(data));
     await redis.expire(cacheKey, CACHE_EXPIRY);
@@ -64,7 +67,7 @@ async function setCachedPioneers(cacheKey: string, data: WikipediaInfo[]) {
   redis.disconnect();
 }
 
-async function fetchAndProcessWikipediaData(pioneers: Pioneer[]) {
+export async function fetchAndProcessWikipediaData(pioneers: Pioneer[]) {
   const results = await Promise.allSettled(
     pioneers.map((pioneer) => fetchWikipediaData(pioneer)),
   );
