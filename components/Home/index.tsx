@@ -9,7 +9,7 @@ import { useFilter } from '../Context/FilterContext';
 import { Badge } from '../ui/badge';
 import { CircleX, LoaderCircle } from 'lucide-react';
 import { Button } from '../ui/button';
-import { loadPioneers } from '@/app/page';
+import { loadPioneers } from '@/app/actions';
 
 interface HomePageProps {
   pioneers: WikipediaInfo[];
