@@ -39,7 +39,8 @@
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
     "tailwind-merge": "^2.5.4",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "winston": "^3.17.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

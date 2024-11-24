@@ -4,6 +4,7 @@ import { fetchWikipediaData } from '@/lib/scrapeWikiData';
 import { Pioneer, WikipediaInfo } from '@/lib/type';
 import { redis } from '@/lib/redis';
 import prisma from '@/lib/db';
+import { logger } from '@/lib/utils';
 
 const PIONEERS_PER_PAGE = 10;
 const CACHE_EXPIRY = 300;
@@ -31,17 +32,18 @@ async function getPioneersFromDB({ lastId, page }: LoadPioneersParams) {
           : {}),
     });
   } catch (error) {
-    console.error('Database error:', error);
+    logger.info('Database error:', error);
     throw new Error('Failed to fetch pioneers from database');
   }
 }
 
 async function getCachedPioneers(cacheKey: string) {
+  redis.connect();
   try {
     const cached = await redis.get(cacheKey);
     return cached ? (JSON.parse(cached) as WikipediaInfo[]) : null;
   } catch (error) {
-    console.error('Cache error:', error);
+    logger.error('Cache error:', error);
     return null;
   }
 }
@@ -50,17 +52,18 @@ async function setCachedPioneers(cacheKey: string, data: WikipediaInfo[]) {
   try {
     const d = await redis.set(cacheKey, JSON.stringify(data));
     await redis.expire(cacheKey, CACHE_EXPIRY);
-    console.log('REDIS STORED', d);
+    logger.info('REDIS STORED', d);
   } catch (error) {
-    console.error('Cache set error:', error);
+    logger.error('Cache set error:', error);
   }
+  redis.disconnect();
 }
 
 async function fetchAndProcessWikipediaData(pioneers: Pioneer[]) {
   const results = await Promise.allSettled(
     pioneers.map((pioneer) => fetchWikipediaData(pioneer)),
   );
-  console.log('WIKI SCRAPED DATA', results);
+  logger.info('WIKI SCRAPED DATA', results);
   return results
     .filter(
       (result): result is PromiseFulfilledResult<WikipediaInfo> =>
@@ -76,12 +79,12 @@ export async function loadPioneers({ lastId, page }: LoadPioneersParams) {
 
     const cachedData = await getCachedPioneers(cacheKey);
     if (cachedData) {
-      console.log('CACHED DATA', cachedData);
+      logger.info('CACHED DATA', cachedData);
       return cachedData;
     }
 
     const pioneers = await getPioneersFromDB({ lastId, page });
-    console.log('PIONEERS', pioneers);
+    logger.info('PIONEERS', pioneers);
     if (pioneers.length === 0) {
       return [];
     }
@@ -92,7 +95,7 @@ export async function loadPioneers({ lastId, page }: LoadPioneersParams) {
 
     return processedData;
   } catch (error) {
-    console.error('Error in loadPioneers:', error);
+    logger.error('Error in loadPioneers:', error);
     throw new Error('Failed to load pioneers');
   }
 }
