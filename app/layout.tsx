@@ -7,6 +7,7 @@ import { SidebarProvider } from '@/components/ui/sidebar';
 import { AppSidebar } from '@/components/app-sidebar';
 import { FilterProvider } from '@/components/Context/FilterContext';
 import { Toaster } from '@/components/ui/sonner';
+import { CSPostHogProvider } from '@/components/posthog-provider';
 
 const geistSans = localFont({
   src: './fonts/GeistVF.woff',
@@ -37,20 +38,22 @@ export default function RootLayout({
           async
         ></script> */}
       </head>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        <div className='flex h-full w-full justify-center'>
-          <SidebarProvider defaultOpen={false}>
-            <FilterProvider>
-              <Header />
-              <AppSidebar />
-              <div className='w-full'>{children}</div>
-              <Toaster />
-            </FilterProvider>
-          </SidebarProvider>
-        </div>
-      </body>
+      <CSPostHogProvider>
+        <body
+          className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        >
+          <div className='flex h-full w-full justify-center'>
+            <SidebarProvider defaultOpen={false}>
+              <FilterProvider>
+                <Header />
+                <AppSidebar />
+                <div className='w-full'>{children}</div>
+                <Toaster />
+              </FilterProvider>
+            </SidebarProvider>
+          </div>
+        </body>
+      </CSPostHogProvider>
     </html>
   );
 }
