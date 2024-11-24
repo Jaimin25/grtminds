@@ -29,19 +29,6 @@ interface LoadPioneersParams {
 // Singleton Redis connection
 let redisClient: typeof redis | null = null;
 
-async function getRedisClient() {
-  if (!redisClient) {
-    try {
-      await redis.connect();
-      redisClient = redis;
-    } catch (error) {
-      logger.error('Redis connection error:', error);
-      throw new Error('Failed to connect to Redis');
-    }
-  }
-  return redisClient;
-}
-
 export async function getPioneersFromDB({ lastId, page }: LoadPioneersParams) {
   try {
     const skip = page && page > 1 ? (page - 1) * PIONEERS_PER_PAGE : 0;
@@ -70,8 +57,7 @@ export async function getPioneersFromDB({ lastId, page }: LoadPioneersParams) {
 
 export async function getCachedPioneers(cacheKey: string) {
   try {
-    const client = await getRedisClient();
-    const cached = await client.get(cacheKey);
+    const cached = await redis.get(cacheKey);
     return cached ? (JSON.parse(cached) as WikipediaInfo[]) : null;
   } catch (error) {
     logger.error('Cache error:', error);
@@ -84,9 +70,8 @@ export async function setCachedPioneers(
   data: WikipediaInfo[],
 ) {
   try {
-    const client = await getRedisClient();
-    await client.set(cacheKey, JSON.stringify(data));
-    await client.expire(cacheKey, CACHE_EXPIRY);
+    await redis.set(cacheKey, JSON.stringify(data));
+    await redis.expire(cacheKey, CACHE_EXPIRY);
     logger.info('Cache stored successfully');
   } catch (error) {
     logger.error('Cache set error:', error);
