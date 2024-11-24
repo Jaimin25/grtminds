@@ -48,8 +48,9 @@ async function getCachedPioneers(cacheKey: string) {
 
 async function setCachedPioneers(cacheKey: string, data: WikipediaInfo[]) {
   try {
-    await redis.set(cacheKey, JSON.stringify(data));
+    const d = await redis.set(cacheKey, JSON.stringify(data));
     await redis.expire(cacheKey, CACHE_EXPIRY);
+    console.log('REDIS STORED', d);
   } catch (error) {
     console.error('Cache set error:', error);
   }
@@ -59,7 +60,7 @@ async function fetchAndProcessWikipediaData(pioneers: Pioneer[]) {
   const results = await Promise.allSettled(
     pioneers.map((pioneer) => fetchWikipediaData(pioneer)),
   );
-
+  console.log('WIKI SCRAPED DATA', results);
   return results
     .filter(
       (result): result is PromiseFulfilledResult<WikipediaInfo> =>
@@ -75,10 +76,12 @@ export async function loadPioneers({ lastId, page }: LoadPioneersParams) {
 
     const cachedData = await getCachedPioneers(cacheKey);
     if (cachedData) {
+      console.log('CACHED DATA', cachedData);
       return cachedData;
     }
 
     const pioneers = await getPioneersFromDB({ lastId, page });
+    console.log('PIONEERS', pioneers);
     if (pioneers.length === 0) {
       return [];
     }
