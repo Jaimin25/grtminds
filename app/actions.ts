@@ -115,9 +115,6 @@ export async function fetchAndProcessWikipediaData(pioneers: Pioneer[]) {
 }
 
 export async function loadPioneers({ lastId, page }: LoadPioneersParams) {
-  // Force no caching of the response
-  const fetchOptions = { cache: 'no-store' } as const;
-
   try {
     const pageNo = page ?? 1;
     const cacheKey = `${CACHE_PREFIX}${pageNo}`;
