@@ -6,9 +6,15 @@ import { redis } from '@/lib/redis';
 import prisma from '@/lib/db';
 import winston from 'winston';
 
+// Configure Winston for Vercel environment
 const logger = winston.createLogger({
   level: 'info',
-  transports: [new winston.transports.Console()],
+  format: winston.format.json(),
+  transports: [
+    new winston.transports.Console({
+      format: winston.format.simple(),
+    }),
+  ],
 });
 
 const PIONEERS_PER_PAGE = 10;
@@ -20,11 +26,27 @@ interface LoadPioneersParams {
   page: number | null;
 }
 
+// Singleton Redis connection
+let redisClient: typeof redis | null = null;
+
+async function getRedisClient() {
+  if (!redisClient) {
+    try {
+      await redis.connect();
+      redisClient = redis;
+    } catch (error) {
+      logger.error('Redis connection error:', error);
+      throw new Error('Failed to connect to Redis');
+    }
+  }
+  return redisClient;
+}
+
 export async function getPioneersFromDB({ lastId, page }: LoadPioneersParams) {
   try {
     const skip = page && page > 1 ? (page - 1) * PIONEERS_PER_PAGE : 0;
 
-    return await prisma.pioneer.findMany({
+    const pioneers = await prisma.pioneer.findMany({
       orderBy: { name: 'asc' },
       take: PIONEERS_PER_PAGE,
       ...(lastId
@@ -36,16 +58,20 @@ export async function getPioneersFromDB({ lastId, page }: LoadPioneersParams) {
           ? { skip }
           : {}),
     });
+
+    await prisma.$disconnect();
+    return pioneers;
   } catch (error) {
-    logger.info('Database error:', error);
+    logger.error('Database error:', error);
+    await prisma.$disconnect();
     throw new Error('Failed to fetch pioneers from database');
   }
 }
 
 export async function getCachedPioneers(cacheKey: string) {
-  redis.connect();
   try {
-    const cached = await redis.get(cacheKey);
+    const client = await getRedisClient();
+    const cached = await client.get(cacheKey);
     return cached ? (JSON.parse(cached) as WikipediaInfo[]) : null;
   } catch (error) {
     logger.error('Cache error:', error);
@@ -58,26 +84,34 @@ export async function setCachedPioneers(
   data: WikipediaInfo[],
 ) {
   try {
-    const d = await redis.set(cacheKey, JSON.stringify(data));
-    await redis.expire(cacheKey, CACHE_EXPIRY);
-    logger.info('REDIS STORED', d);
+    const client = await getRedisClient();
+    await client.set(cacheKey, JSON.stringify(data));
+    await client.expire(cacheKey, CACHE_EXPIRY);
+    logger.info('Cache stored successfully');
   } catch (error) {
     logger.error('Cache set error:', error);
   }
-  redis.disconnect();
 }
 
 export async function fetchAndProcessWikipediaData(pioneers: Pioneer[]) {
-  const results = await Promise.allSettled(
-    pioneers.map((pioneer) => fetchWikipediaData(pioneer)),
-  );
-  logger.info('WIKI SCRAPED DATA', results);
-  return results
-    .filter(
-      (result): result is PromiseFulfilledResult<WikipediaInfo> =>
-        result.status === 'fulfilled' && result.value !== null,
-    )
-    .map((result) => result.value);
+  try {
+    const results = await Promise.allSettled(
+      pioneers.map((pioneer) => fetchWikipediaData(pioneer)),
+    );
+
+    const processedResults = results
+      .filter(
+        (result): result is PromiseFulfilledResult<WikipediaInfo> =>
+          result.status === 'fulfilled' && result.value !== null,
+      )
+      .map((result) => result.value);
+
+    logger.info(`Processed ${processedResults.length} Wikipedia entries`);
+    return processedResults;
+  } catch (error) {
+    logger.error('Wikipedia data processing error:', error);
+    throw new Error('Failed to process Wikipedia data');
+  }
 }
 
 export async function loadPioneers({ lastId, page }: LoadPioneersParams) {
@@ -85,25 +119,37 @@ export async function loadPioneers({ lastId, page }: LoadPioneersParams) {
     const pageNo = page ?? 1;
     const cacheKey = `${CACHE_PREFIX}${pageNo}`;
 
+    // Try to get cached data first
     const cachedData = await getCachedPioneers(cacheKey);
     if (cachedData) {
-      logger.info('CACHED DATA', cachedData);
+      logger.info('Returning cached data');
       return cachedData;
     }
 
+    // If no cached data, fetch from database
     const pioneers = await getPioneersFromDB({ lastId, page });
-    logger.info('PIONEERS', pioneers);
     if (pioneers.length === 0) {
       return [];
     }
 
+    // Process and cache the data
     const processedData = await fetchAndProcessWikipediaData(pioneers);
-
     await setCachedPioneers(cacheKey, processedData);
 
     return processedData;
   } catch (error) {
     logger.error('Error in loadPioneers:', error);
     throw new Error('Failed to load pioneers');
+  } finally {
+    // Ensure connections are properly closed
+    try {
+      if (redisClient) {
+        await redisClient.disconnect();
+        redisClient = null;
+      }
+      await prisma.$disconnect();
+    } catch (error) {
+      logger.error('Error disconnecting:', error);
+    }
   }
 }
