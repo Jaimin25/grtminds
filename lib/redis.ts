@@ -1,18 +1,23 @@
+// lib/redis.ts
 import Redis from 'ioredis';
 
-const redisClient = () => {
-  const redis = new Redis(
-    process.env.NODE_ENV === 'development'
-      ? process.env.LOCAL_REDIS!
-      : process.env.CLOUD_REDIS!,
-  );
+let redis: Redis | null = null;
 
-  redis.on('connect', () => {
-    console.log('Connected to redis');
-  });
+export function getRedisInstance() {
+  if (!redis) {
+    redis = new Redis(
+      process.env.NODE_ENV === 'development'
+        ? process.env.LOCAL_REDIS!
+        : process.env.CLOUD_REDIS!,
+    );
 
-  redis.on('error', (err) => console.log((err as Error).message));
+    redis.on('connect', () => {
+      console.log('Connected to redis');
+    });
+
+    redis.on('error', (err) => console.log((err as Error).message));
+  }
   return redis;
-};
+}
 
-export const redis = redisClient();
+export { redis };

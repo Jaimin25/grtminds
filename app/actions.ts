@@ -2,11 +2,10 @@
 
 import { fetchWikipediaData } from '@/lib/scrapeWikiData';
 import { Pioneer, WikipediaInfo } from '@/lib/type';
-import { redis } from '@/lib/redis';
+import { getRedisInstance } from '@/lib/redis';
 import prisma from '@/lib/db';
 import winston from 'winston';
 
-// Configure Winston for Vercel environment
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.json(),
@@ -26,9 +25,6 @@ interface LoadPioneersParams {
   page: number | null;
 }
 
-// Singleton Redis connection
-let redisClient: typeof redis | null = null;
-
 export async function getPioneersFromDB({ lastId, page }: LoadPioneersParams) {
   try {
     const skip = page && page > 1 ? (page - 1) * PIONEERS_PER_PAGE : 0;
@@ -46,16 +42,15 @@ export async function getPioneersFromDB({ lastId, page }: LoadPioneersParams) {
           : {}),
     });
 
-    await prisma.$disconnect();
     return pioneers;
   } catch (error) {
     logger.error('Database error:', error);
-    await prisma.$disconnect();
     throw new Error('Failed to fetch pioneers from database');
   }
 }
 
 export async function getCachedPioneers(cacheKey: string) {
+  const redis = getRedisInstance();
   try {
     const cached = await redis.get(cacheKey);
     return cached ? (JSON.parse(cached) as WikipediaInfo[]) : null;
@@ -69,6 +64,7 @@ export async function setCachedPioneers(
   cacheKey: string,
   data: WikipediaInfo[],
 ) {
+  const redis = getRedisInstance();
   try {
     await redis.set(cacheKey, JSON.stringify(data));
     await redis.expire(cacheKey, CACHE_EXPIRY);
@@ -125,16 +121,5 @@ export async function loadPioneers({ lastId, page }: LoadPioneersParams) {
   } catch (error) {
     logger.error('Error in loadPioneers:', error);
     throw new Error('Failed to load pioneers');
-  } finally {
-    // Ensure connections are properly closed
-    try {
-      if (redisClient) {
-        await redisClient.disconnect();
-        redisClient = null;
-      }
-      await prisma.$disconnect();
-    } catch (error) {
-      logger.error('Error disconnecting:', error);
-    }
   }
 }
