@@ -32,7 +32,11 @@ export default function Header() {
         <Button onClick={toggleSidebar} variant={'outline'}>
           <Filter />
         </Button>
-        <Button>
+        <Button
+          onClick={() =>
+            window.open('https://github.com/Jaimin25/grtminds', '_blank')
+          }
+        >
           <svg
             role='img'
             viewBox='0 0 24 24'
